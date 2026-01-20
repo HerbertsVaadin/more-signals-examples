@@ -1,8 +1,14 @@
 package cf.vaadin.herb.views.dashboard;
 
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 
 import cf.vaadin.herb.views.dashboard.ServiceHealth.Status;
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.board.Board;
 import com.vaadin.flow.component.charts.Chart;
 import com.vaadin.flow.component.charts.model.*;
@@ -17,7 +23,6 @@ import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.FlexComponent;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.data.renderer.ComponentRenderer;
 import com.vaadin.flow.router.Menu;
 import com.vaadin.flow.router.PageTitle;
@@ -35,18 +40,47 @@ import org.vaadin.lineawesome.LineAwesomeIconUrl;
 @Menu(order = 1, icon = LineAwesomeIconUrl.CHART_AREA_SOLID)
 public class DashboardView extends Main {
 
+    private static final int TIMELINE_POINTS = 12;
+    private static final int TIMELINE_STEP_SECONDS = 10;
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss");
+
+    private final Random random = new Random();
+    private final List<HighlightCard> highlightCards = new ArrayList<>();
+    private Chart viewEventsChart;
+    private XAxis viewEventsXAxis;
+    private ListSeries berlinSeries;
+    private ListSeries londonSeries;
+    private ListSeries newYorkSeries;
+    private ListSeries tokyoSeries;
+    private final List<String> timelineCategories = new ArrayList<>(TIMELINE_POINTS);
+    private final List<Number> berlinTimeline = new ArrayList<>(TIMELINE_POINTS);
+    private final List<Number> londonTimeline = new ArrayList<>(TIMELINE_POINTS);
+    private final List<Number> newYorkTimeline = new ArrayList<>(TIMELINE_POINTS);
+    private final List<Number> tokyoTimeline = new ArrayList<>(TIMELINE_POINTS);
+    private Chart responseTimesChart;
+    private DataSeries responseSeries;
+    private Grid<ServiceHealth> serviceHealthGrid;
+
     public DashboardView() {
         addClassName("dashboard-view");
 
         Board board = new Board();
-        board.addRow(createHighlight("Current users", "745", 33.7), createHighlight("View events", "54.6k", -112.45),
-                createHighlight("Conversion rate", "18%", 3.9), createHighlight("Custom metric", "-123.45", 0.0));
+        board.addRow(createHighlightCard("Current users", "745", 33.7).layout,
+                createHighlightCard("View events", "54.6k", -112.45).layout,
+                createHighlightCard("Conversion rate", "18%", 3.9).layout,
+                createHighlightCard("Custom metric", "-123.45", 0.0).layout);
         board.addRow(createViewEvents());
         board.addRow(createServiceHealth(), createResponseTimes());
         add(board);
+
+        addAttachListener(event -> {
+            UI ui = event.getUI();
+            ui.setPollInterval(2000);
+            ui.addPollListener(pollEvent -> updateMockData());
+        });
     }
 
-    private Component createHighlight(String title, String value, Double percentage) {
+    private HighlightCard createHighlightCard(String title, String value, Double percentage) {
         VaadinIcon icon = VaadinIcon.ARROW_UP;
         String prefix = "";
         String theme = "badge";
@@ -77,27 +111,26 @@ public class DashboardView extends Main {
         layout.addClassName(Padding.LARGE);
         layout.setPadding(false);
         layout.setSpacing(false);
-        return layout;
+        HighlightCard card = new HighlightCard(layout, span, badge);
+        highlightCards.add(card);
+        return card;
     }
 
     private Component createViewEvents() {
         // Header
-        Select year = new Select();
-        year.setItems("2011", "2012", "2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021");
-        year.setValue("2021");
-        year.setWidth("100px");
-
-        HorizontalLayout header = createHeader("View events", "City/month");
-        header.add(year);
+        HorizontalLayout header = createHeader("View events", "City / last 2 min");
 
         // Chart
         Chart chart = new Chart(ChartType.AREASPLINE);
         Configuration conf = chart.getConfiguration();
         conf.getChart().setStyledMode(true);
 
+        initTimeline();
+
         XAxis xAxis = new XAxis();
-        xAxis.setCategories("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec");
+        xAxis.setCategories(timelineCategories.toArray(new String[0]));
         conf.addxAxis(xAxis);
+        viewEventsXAxis = xAxis;
 
         conf.getyAxis().setTitle("Values");
 
@@ -106,10 +139,16 @@ public class DashboardView extends Main {
         plotOptions.setMarker(new Marker(false));
         conf.addPlotOptions(plotOptions);
 
-        conf.addSeries(new ListSeries("Berlin", 189, 191, 291, 396, 501, 403, 609, 712, 729, 942, 1044, 1247));
-        conf.addSeries(new ListSeries("London", 138, 246, 248, 348, 352, 353, 463, 573, 778, 779, 885, 887));
-        conf.addSeries(new ListSeries("New York", 65, 65, 166, 171, 293, 302, 308, 317, 427, 429, 535, 636));
-        conf.addSeries(new ListSeries("Tokyo", 0, 11, 17, 123, 130, 142, 248, 349, 452, 454, 458, 462));
+        berlinSeries = new ListSeries("Berlin", berlinTimeline.toArray(new Number[0]));
+        londonSeries = new ListSeries("London", londonTimeline.toArray(new Number[0]));
+        newYorkSeries = new ListSeries("New York", newYorkTimeline.toArray(new Number[0]));
+        tokyoSeries = new ListSeries("Tokyo", tokyoTimeline.toArray(new Number[0]));
+        conf.addSeries(berlinSeries);
+        conf.addSeries(londonSeries);
+        conf.addSeries(newYorkSeries);
+        conf.addSeries(tokyoSeries);
+
+        viewEventsChart = chart;
 
         // Add it all together
         VerticalLayout viewEvents = new VerticalLayout(header, chart);
@@ -142,9 +181,8 @@ public class DashboardView extends Main {
         grid.addColumn(ServiceHealth::getOutput).setHeader("Output").setAutoWidth(true)
                 .setTextAlign(ColumnTextAlign.END);
 
-        grid.setItems(new ServiceHealth(Status.EXCELLENT, "Münster", 324, 1540),
-                new ServiceHealth(Status.OK, "Cluj-Napoca", 311, 1320),
-                new ServiceHealth(Status.FAILING, "Ciudad Victoria", 300, 1219));
+        grid.setItems(mockServiceHealth());
+        serviceHealthGrid = grid;
 
         // Add it all together
         VerticalLayout serviceHealth = new VerticalLayout(header, grid);
@@ -163,15 +201,16 @@ public class DashboardView extends Main {
         Configuration conf = chart.getConfiguration();
         conf.getChart().setStyledMode(true);
         chart.setThemeName("gradient");
+        responseTimesChart = chart;
 
-        DataSeries series = new DataSeries();
-        series.add(new DataSeriesItem("System 1", 12.5));
-        series.add(new DataSeriesItem("System 2", 12.5));
-        series.add(new DataSeriesItem("System 3", 12.5));
-        series.add(new DataSeriesItem("System 4", 12.5));
-        series.add(new DataSeriesItem("System 5", 12.5));
-        series.add(new DataSeriesItem("System 6", 12.5));
-        conf.addSeries(series);
+        responseSeries = new DataSeries();
+        responseSeries.add(new DataSeriesItem("System 1", 12.5));
+        responseSeries.add(new DataSeriesItem("System 2", 12.5));
+        responseSeries.add(new DataSeriesItem("System 3", 12.5));
+        responseSeries.add(new DataSeriesItem("System 4", 12.5));
+        responseSeries.add(new DataSeriesItem("System 5", 12.5));
+        responseSeries.add(new DataSeriesItem("System 6", 12.5));
+        conf.addSeries(responseSeries);
 
         // Add it all together
         VerticalLayout serviceHealth = new VerticalLayout(header, chart);
@@ -222,6 +261,148 @@ public class DashboardView extends Main {
             theme += " error";
         }
         return theme;
+    }
+
+    private void updateMockData() {
+        if (highlightCards.size() >= 4) {
+            highlightCards.get(0).update(formatNumber(randomBetween(650, 820)), randomPercentage());
+            highlightCards.get(1).update(formatCompactNumber(randomBetween(42000, 62000)), randomPercentage());
+            highlightCards.get(2).update(randomBetween(12, 24) + "%", randomPercentage());
+            highlightCards.get(3).update(formatNumber(randomBetween(-200, 200)), randomPercentage());
+        }
+
+        if (berlinSeries != null) {
+            rollTimeline(berlinTimeline, randomBetween(480, 920));
+            berlinSeries.setData(berlinTimeline.toArray(new Number[0]));
+        }
+        if (londonSeries != null) {
+            rollTimeline(londonTimeline, randomBetween(420, 820));
+            londonSeries.setData(londonTimeline.toArray(new Number[0]));
+        }
+        if (newYorkSeries != null) {
+            rollTimeline(newYorkTimeline, randomBetween(220, 520));
+            newYorkSeries.setData(newYorkTimeline.toArray(new Number[0]));
+        }
+        if (tokyoSeries != null) {
+            rollTimeline(tokyoTimeline, randomBetween(260, 600));
+            tokyoSeries.setData(tokyoTimeline.toArray(new Number[0]));
+        }
+        if (viewEventsXAxis != null) {
+            rollTimeline(timelineCategories, LocalTime.now().format(TIME_FORMATTER));
+            viewEventsXAxis.setCategories(timelineCategories.toArray(new String[0]));
+        }
+        if (viewEventsChart != null) {
+            viewEventsChart.drawChart();
+        }
+
+        if (responseSeries != null) {
+            for (DataSeriesItem item : responseSeries.getData()) {
+                item.setY(randomBetween(6, 22));
+            }
+        }
+        if (responseTimesChart != null) {
+            responseTimesChart.drawChart();
+        }
+
+        if (serviceHealthGrid != null) {
+            serviceHealthGrid.setItems(mockServiceHealth());
+        }
+    }
+
+    private List<ServiceHealth> mockServiceHealth() {
+        return List.of(
+                new ServiceHealth(randomStatus(), "Münster", randomBetween(280, 360), randomBetween(1200, 1700)),
+                new ServiceHealth(randomStatus(), "Cluj-Napoca", randomBetween(260, 340), randomBetween(1100, 1600)),
+                new ServiceHealth(randomStatus(), "Ciudad Victoria", randomBetween(240, 320), randomBetween(1000, 1500)));
+    }
+
+    private Status randomStatus() {
+        int pick = random.nextInt(3);
+        if (pick == 0) {
+            return Status.EXCELLENT;
+        } else if (pick == 1) {
+            return Status.OK;
+        }
+        return Status.FAILING;
+    }
+
+    private void initTimeline() {
+        if (!timelineCategories.isEmpty()) {
+            return;
+        }
+        LocalTime start = LocalTime.now()
+                .minusSeconds((long) (TIMELINE_POINTS - 1) * TIMELINE_STEP_SECONDS);
+        for (int i = 0; i < TIMELINE_POINTS; i++) {
+            timelineCategories.add(start.plusSeconds((long) i * TIMELINE_STEP_SECONDS).format(TIME_FORMATTER));
+            berlinTimeline.add(randomBetween(480, 920));
+            londonTimeline.add(randomBetween(420, 820));
+            newYorkTimeline.add(randomBetween(220, 520));
+            tokyoTimeline.add(randomBetween(260, 600));
+        }
+    }
+
+    private <T> void rollTimeline(List<T> timeline, T nextValue) {
+        if (!timeline.isEmpty()) {
+            timeline.remove(0);
+        }
+        timeline.add(nextValue);
+    }
+
+    private int randomBetween(int min, int max) {
+        return min + random.nextInt(max - min + 1);
+    }
+
+    private double randomPercentage() {
+        double value = (random.nextDouble() * 30.0) - 15.0;
+        return Math.round(value * 10.0) / 10.0;
+    }
+
+    private String formatNumber(int value) {
+        return String.valueOf(value);
+    }
+
+    private String formatCompactNumber(int value) {
+        if (value >= 1000) {
+            double rounded = Math.round(value / 100.0) / 10.0;
+            return rounded + "k";
+        }
+        return String.valueOf(value);
+    }
+
+    private static final class HighlightCard {
+        private final VerticalLayout layout;
+        private final Span value;
+        private final Span badge;
+
+        private HighlightCard(VerticalLayout layout, Span value, Span badge) {
+            this.layout = layout;
+            this.value = value;
+            this.badge = badge;
+        }
+
+        private void update(String newValue, double percentage) {
+            value.setText(newValue);
+            badge.removeAll();
+
+            VaadinIcon icon = VaadinIcon.ARROW_UP;
+            String prefix = "";
+            String theme = "badge";
+            if (percentage == 0) {
+                prefix = "±";
+            } else if (percentage > 0) {
+                prefix = "+";
+                theme += " success";
+            } else {
+                icon = VaadinIcon.ARROW_DOWN;
+                theme += " error";
+            }
+
+            Icon i = icon.create();
+            i.addClassNames(BoxSizing.BORDER, Padding.XSMALL);
+            badge.add(i, new Span(prefix + percentage));
+            badge.getElement().getThemeList().clear();
+            badge.getElement().getThemeList().add(theme);
+        }
     }
 
 }
