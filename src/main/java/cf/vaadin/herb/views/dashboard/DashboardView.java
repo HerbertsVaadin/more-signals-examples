@@ -5,6 +5,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.function.Function;
 
 import cf.vaadin.herb.views.dashboard.ServiceHealth.Status;
 import com.vaadin.flow.component.Component;
@@ -33,6 +34,9 @@ import com.vaadin.flow.theme.lumo.LumoUtility.FontWeight;
 import com.vaadin.flow.theme.lumo.LumoUtility.Margin;
 import com.vaadin.flow.theme.lumo.LumoUtility.Padding;
 import com.vaadin.flow.theme.lumo.LumoUtility.TextColor;
+import com.vaadin.signals.NumberSignal;
+import com.vaadin.signals.Signal;
+
 import org.vaadin.lineawesome.LineAwesomeIconUrl;
 
 @PageTitle("Dashboard")
@@ -43,6 +47,11 @@ public class DashboardView extends Main {
     private static final int TIMELINE_POINTS = 12;
     private static final int TIMELINE_STEP_SECONDS = 10;
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss");
+
+    private NumberSignal currentUsersSignal = new NumberSignal(745);
+    private NumberSignal viewEventsSignal = new NumberSignal(54600);
+    private NumberSignal conversionRateSignal = new NumberSignal(18);
+    private NumberSignal customMetricSignal = new NumberSignal(-123.45);
 
     private final Random random = new Random();
     private final List<HighlightCard> highlightCards = new ArrayList<>();
@@ -65,10 +74,10 @@ public class DashboardView extends Main {
         addClassName("dashboard-view");
 
         Board board = new Board();
-        board.addRow(createHighlightCard("Current users", "745", 33.7).layout,
-                createHighlightCard("View events", "54.6k", -112.45).layout,
-                createHighlightCard("Conversion rate", "18%", 3.9).layout,
-                createHighlightCard("Custom metric", "-123.45", 0.0).layout);
+        board.addRow(createHighlightCard("Current users", currentUsersSignal, this::formatNumber).layout,
+                createHighlightCard("View events", viewEventsSignal, this::formatCompactNumber).layout,
+                createHighlightCard("Conversion rate", conversionRateSignal, number -> String.format("%.1f%%", number.doubleValue())).layout,
+                createHighlightCard("Custom metric", customMetricSignal, this::formatNumber).layout);
         board.addRow(createViewEvents());
         board.addRow(createServiceHealth(), createResponseTimes());
         add(board);
@@ -80,38 +89,21 @@ public class DashboardView extends Main {
         });
     }
 
-    private HighlightCard createHighlightCard(String title, String value, Double percentage) {
-        VaadinIcon icon = VaadinIcon.ARROW_UP;
-        String prefix = "";
-        String theme = "badge";
-
-        if (percentage == 0) {
-            prefix = "±";
-        } else if (percentage > 0) {
-            prefix = "+";
-            theme += " success";
-        } else if (percentage < 0) {
-            icon = VaadinIcon.ARROW_DOWN;
-            theme += " error";
-        }
-
+    private HighlightCard createHighlightCard(String title, NumberSignal signal, Function<Number, String> format) {
         H2 h2 = new H2(title);
         h2.addClassNames(FontWeight.NORMAL, Margin.NONE, TextColor.SECONDARY, FontSize.XSMALL);
 
-        Span span = new Span(value);
+        Span span = new Span(format.apply(signal.value()));
         span.addClassNames(FontWeight.SEMIBOLD, FontSize.XXXLARGE);
 
-        Icon i = icon.create();
-        i.addClassNames(BoxSizing.BORDER, Padding.XSMALL);
-
-        Span badge = new Span(i, new Span(prefix + percentage.toString()));
-        badge.getElement().getThemeList().add(theme);
+        Span badge = new Span();
 
         VerticalLayout layout = new VerticalLayout(h2, span, badge);
         layout.addClassName(Padding.LARGE);
         layout.setPadding(false);
         layout.setSpacing(false);
-        HighlightCard card = new HighlightCard(layout, span, badge);
+        HighlightCard card = new HighlightCard(layout, span, badge, format);
+        card.update(0);
         highlightCards.add(card);
         return card;
     }
@@ -265,10 +257,17 @@ public class DashboardView extends Main {
 
     private void updateMockData() {
         if (highlightCards.size() >= 4) {
-            highlightCards.get(0).update(formatNumber(randomBetween(650, 820)), randomPercentage());
-            highlightCards.get(1).update(formatCompactNumber(randomBetween(42000, 62000)), randomPercentage());
-            highlightCards.get(2).update(randomBetween(12, 24) + "%", randomPercentage());
-            highlightCards.get(3).update(formatNumber(randomBetween(-200, 200)), randomPercentage());
+            int currentUsers = randomBetween(650, 820);
+            highlightCards.get(0).update(currentUsers);
+
+            int viewEvents = randomBetween(42000, 62000);
+            highlightCards.get(1).update(viewEvents);
+
+            int conversionRate = randomBetween(12, 24);
+            highlightCards.get(2).update(conversionRate);
+
+            int customMetric = randomBetween(-200, 200);
+            highlightCards.get(3).update(customMetric);
         }
 
         if (berlinSeries != null) {
@@ -352,18 +351,13 @@ public class DashboardView extends Main {
         return min + random.nextInt(max - min + 1);
     }
 
-    private double randomPercentage() {
-        double value = (random.nextDouble() * 30.0) - 15.0;
-        return Math.round(value * 10.0) / 10.0;
-    }
-
-    private String formatNumber(int value) {
+    private String formatNumber(Number value) {
         return String.valueOf(value);
     }
 
-    private String formatCompactNumber(int value) {
-        if (value >= 1000) {
-            double rounded = Math.round(value / 100.0) / 10.0;
+    private String formatCompactNumber(Number value) {
+        if (value.doubleValue() >= 1000) {
+            double rounded = Math.round(value.doubleValue() / 100.0) / 10.0;
             return rounded + "k";
         }
         return String.valueOf(value);
@@ -373,20 +367,25 @@ public class DashboardView extends Main {
         private final VerticalLayout layout;
         private final Span value;
         private final Span badge;
+        private final Function<Number, String> format;
+        private Number lastNumeric;
 
-        private HighlightCard(VerticalLayout layout, Span value, Span badge) {
+        private HighlightCard(VerticalLayout layout, Span value, Span badge, Function<Number, String> format) {
             this.layout = layout;
             this.value = value;
             this.badge = badge;
+            this.format = format;
         }
 
-        private void update(String newValue, double percentage) {
-            value.setText(newValue);
+        private void update(Number newValue) {
+            value.setText(format.apply(newValue));
             badge.removeAll();
 
             VaadinIcon icon = VaadinIcon.ARROW_UP;
             String prefix = "";
             String theme = "badge";
+
+            double percentage = calculatePercentageChange(newValue, lastNumeric);
             if (percentage == 0) {
                 prefix = "±";
             } else if (percentage > 0) {
@@ -402,6 +401,16 @@ public class DashboardView extends Main {
             badge.add(i, new Span(prefix + percentage));
             badge.getElement().getThemeList().clear();
             badge.getElement().getThemeList().add(theme);
+
+            lastNumeric = newValue;
+        }
+
+        private double calculatePercentageChange(Number current, Number previous) {
+            if (previous == null) {
+                return 0.0;
+            }
+            double percent = ((current.doubleValue() - previous.doubleValue()) / Math.abs(previous.doubleValue())) * 100.0;
+            return Math.round(percent * 10.0) / 10.0;
         }
     }
 
