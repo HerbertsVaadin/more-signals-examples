@@ -9,6 +9,7 @@ import java.util.function.Function;
 
 import cf.vaadin.herb.views.dashboard.ServiceHealth.Status;
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.ComponentEffect;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.board.Board;
 import com.vaadin.flow.component.charts.Chart;
@@ -34,6 +35,7 @@ import com.vaadin.flow.theme.lumo.LumoUtility.FontWeight;
 import com.vaadin.flow.theme.lumo.LumoUtility.Margin;
 import com.vaadin.flow.theme.lumo.LumoUtility.Padding;
 import com.vaadin.flow.theme.lumo.LumoUtility.TextColor;
+import com.vaadin.signals.ListSignal;
 import com.vaadin.signals.NumberSignal;
 import com.vaadin.signals.Signal;
 
@@ -61,11 +63,12 @@ public class DashboardView extends Main {
     private ListSeries londonSeries;
     private ListSeries newYorkSeries;
     private ListSeries tokyoSeries;
-    private final List<String> timelineCategories = new ArrayList<>(TIMELINE_POINTS);
-    private final List<Number> berlinTimeline = new ArrayList<>(TIMELINE_POINTS);
-    private final List<Number> londonTimeline = new ArrayList<>(TIMELINE_POINTS);
-    private final List<Number> newYorkTimeline = new ArrayList<>(TIMELINE_POINTS);
-    private final List<Number> tokyoTimeline = new ArrayList<>(TIMELINE_POINTS);
+    private ListSeries timelineCategoriesSeries;
+    private final ListSignal<String> timelineCategoriesSignal = new ListSignal<>(String.class);
+    private final ListSignal<Number> berlinTimelineSignal = new ListSignal<>(Number.class);
+    private final ListSignal<Number> londonTimelineSignal = new ListSignal<>(Number.class);
+    private final ListSignal<Number> newYorkTimelineSignal = new ListSignal<>(Number.class);
+    private final ListSignal<Number> tokyoTimelineSignal = new ListSignal<>(Number.class);
     private Chart responseTimesChart;
     private DataSeries responseSeries;
     private Grid<ServiceHealth> serviceHealthGrid;
@@ -74,15 +77,16 @@ public class DashboardView extends Main {
         addClassName("dashboard-view");
 
         Board board = new Board();
-        board.addRow(createHighlightCard("Current users", currentUsersSignal, this::formatNumber).layout,
-                createHighlightCard("View events", viewEventsSignal, this::formatCompactNumber).layout,
-                createHighlightCard("Conversion rate", conversionRateSignal, number -> String.format("%.1f%%", number.doubleValue())).layout,
-                createHighlightCard("Custom metric", customMetricSignal, this::formatNumber).layout);
+        board.addRow(createHighlightCard("Current users", currentUsersSignal, this::formatNumber),
+                createHighlightCard("View events", viewEventsSignal, this::formatCompactNumber),
+                createHighlightCard("Conversion rate", conversionRateSignal, number -> String.format("%.1f%%", number.doubleValue())),
+                createHighlightCard("Custom metric", customMetricSignal, this::formatNumber));
         board.addRow(createViewEvents());
         board.addRow(createServiceHealth(), createResponseTimes());
         add(board);
 
         addAttachListener(event -> {
+            // TODO do not use polling for this
             UI ui = event.getUI();
             ui.setPollInterval(2000);
             ui.addPollListener(pollEvent -> updateMockData());
@@ -90,20 +94,9 @@ public class DashboardView extends Main {
     }
 
     private HighlightCard createHighlightCard(String title, NumberSignal signal, Function<Number, String> format) {
-        H2 h2 = new H2(title);
-        h2.addClassNames(FontWeight.NORMAL, Margin.NONE, TextColor.SECONDARY, FontSize.XSMALL);
-
-        Span span = new Span(format.apply(signal.value()));
-        span.addClassNames(FontWeight.SEMIBOLD, FontSize.XXXLARGE);
-
-        Span badge = new Span();
-
-        VerticalLayout layout = new VerticalLayout(h2, span, badge);
-        layout.addClassName(Padding.LARGE);
-        layout.setPadding(false);
-        layout.setSpacing(false);
-        HighlightCard card = new HighlightCard(layout, span, badge, format);
-        card.update(0);
+        
+        HighlightCard card = new HighlightCard(title, signal, format);
+        card.update(signal.value());
         highlightCards.add(card);
         return card;
     }
@@ -117,10 +110,7 @@ public class DashboardView extends Main {
         Configuration conf = chart.getConfiguration();
         conf.getChart().setStyledMode(true);
 
-        initTimeline();
-
         XAxis xAxis = new XAxis();
-        xAxis.setCategories(timelineCategories.toArray(new String[0]));
         conf.addxAxis(xAxis);
         viewEventsXAxis = xAxis;
 
@@ -131,10 +121,32 @@ public class DashboardView extends Main {
         plotOptions.setMarker(new Marker(false));
         conf.addPlotOptions(plotOptions);
 
-        berlinSeries = new ListSeries("Berlin", berlinTimeline.toArray(new Number[0]));
-        londonSeries = new ListSeries("London", londonTimeline.toArray(new Number[0]));
-        newYorkSeries = new ListSeries("New York", newYorkTimeline.toArray(new Number[0]));
-        tokyoSeries = new ListSeries("Tokyo", tokyoTimeline.toArray(new Number[0]));
+        berlinSeries = new ListSeries("Berlin", new Number[0]);
+        londonSeries = new ListSeries("London", new Number[0]);
+        newYorkSeries = new ListSeries("New York", new Number[0]);
+        tokyoSeries = new ListSeries("Tokyo", new Number[0]);
+
+        ComponentEffect.effect(chart, () -> {
+            berlinSeries.setData(berlinTimelineSignal.value().stream().map(Signal::value).toArray(Number[]::new));
+            // TODO issue of getting the values from ListSignal instead of Signal<Number>
+        });
+        
+        ComponentEffect.effect(chart, () -> {
+            londonSeries.setData(londonTimelineSignal.value().stream().map(Signal::value).toArray(Number[]::new));
+        });
+        
+        ComponentEffect.effect(chart, () -> {
+            newYorkSeries.setData(newYorkTimelineSignal.value().stream().map(Signal::value).toArray(Number[]::new));
+        });
+        
+        ComponentEffect.effect(chart, () -> {
+            tokyoSeries.setData(tokyoTimelineSignal.value().stream().map(Signal::value).toArray(Number[]::new));
+        });
+        
+        ComponentEffect.effect(chart, () -> {
+            xAxis.setCategories(timelineCategoriesSignal.value().stream().map(Signal::value).toArray(String[]::new));
+        });
+
         conf.addSeries(berlinSeries);
         conf.addSeries(londonSeries);
         conf.addSeries(newYorkSeries);
@@ -257,39 +269,37 @@ public class DashboardView extends Main {
 
     private void updateMockData() {
         if (highlightCards.size() >= 4) {
-            int currentUsers = randomBetween(650, 820);
-            highlightCards.get(0).update(currentUsers);
-
-            int viewEvents = randomBetween(42000, 62000);
-            highlightCards.get(1).update(viewEvents);
-
-            int conversionRate = randomBetween(12, 24);
-            highlightCards.get(2).update(conversionRate);
-
-            int customMetric = randomBetween(-200, 200);
-            highlightCards.get(3).update(customMetric);
+            currentUsersSignal.value(randomBetween(650, 820));
+            viewEventsSignal.value(randomBetween(42000, 62000));
+            conversionRateSignal.value(randomBetween(12, 24));
+            customMetricSignal.value(randomBetween(-200, 200));
         }
 
-        if (berlinSeries != null) {
-            rollTimeline(berlinTimeline, randomBetween(480, 920));
-            berlinSeries.setData(berlinTimeline.toArray(new Number[0]));
+        if (berlinTimelineSignal.value().size() >= TIMELINE_POINTS) {
+            berlinTimelineSignal.remove(berlinTimelineSignal.value().getFirst()); // TODO github issue remove first / last? 
         }
-        if (londonSeries != null) {
-            rollTimeline(londonTimeline, randomBetween(420, 820));
-            londonSeries.setData(londonTimeline.toArray(new Number[0]));
+        berlinTimelineSignal.insertLast(randomBetween(480, 920));
+        
+        if (londonTimelineSignal.value().size() >= TIMELINE_POINTS) {
+            londonTimelineSignal.remove(londonTimelineSignal.value().getFirst());
         }
-        if (newYorkSeries != null) {
-            rollTimeline(newYorkTimeline, randomBetween(220, 520));
-            newYorkSeries.setData(newYorkTimeline.toArray(new Number[0]));
+        londonTimelineSignal.insertLast(randomBetween(420, 820));
+
+        if (newYorkTimelineSignal.value().size() >= TIMELINE_POINTS) {
+            newYorkTimelineSignal.remove(newYorkTimelineSignal.value().getFirst());
         }
-        if (tokyoSeries != null) {
-            rollTimeline(tokyoTimeline, randomBetween(260, 600));
-            tokyoSeries.setData(tokyoTimeline.toArray(new Number[0]));
+        newYorkTimelineSignal.insertLast(randomBetween(220, 520));
+
+        if (tokyoTimelineSignal.value().size() >= TIMELINE_POINTS) {
+            tokyoTimelineSignal.remove(tokyoTimelineSignal.value().getFirst());
         }
-        if (viewEventsXAxis != null) {
-            rollTimeline(timelineCategories, LocalTime.now().format(TIME_FORMATTER));
-            viewEventsXAxis.setCategories(timelineCategories.toArray(new String[0]));
+        tokyoTimelineSignal.insertLast(randomBetween(260, 600));
+
+        if (timelineCategoriesSignal.value().size() >= TIMELINE_POINTS) {
+            timelineCategoriesSignal.remove(timelineCategoriesSignal.value().getFirst());
         }
+        timelineCategoriesSignal.insertLast(LocalTime.now().format(TIME_FORMATTER));
+
         if (viewEventsChart != null) {
             viewEventsChart.drawChart();
         }
@@ -325,28 +335,6 @@ public class DashboardView extends Main {
         return Status.FAILING;
     }
 
-    private void initTimeline() {
-        if (!timelineCategories.isEmpty()) {
-            return;
-        }
-        LocalTime start = LocalTime.now()
-                .minusSeconds((long) (TIMELINE_POINTS - 1) * TIMELINE_STEP_SECONDS);
-        for (int i = 0; i < TIMELINE_POINTS; i++) {
-            timelineCategories.add(start.plusSeconds((long) i * TIMELINE_STEP_SECONDS).format(TIME_FORMATTER));
-            berlinTimeline.add(randomBetween(480, 920));
-            londonTimeline.add(randomBetween(420, 820));
-            newYorkTimeline.add(randomBetween(220, 520));
-            tokyoTimeline.add(randomBetween(260, 600));
-        }
-    }
-
-    private <T> void rollTimeline(List<T> timeline, T nextValue) {
-        if (!timeline.isEmpty()) {
-            timeline.remove(0);
-        }
-        timeline.add(nextValue);
-    }
-
     private int randomBetween(int min, int max) {
         return min + random.nextInt(max - min + 1);
     }
@@ -363,22 +351,32 @@ public class DashboardView extends Main {
         return String.valueOf(value);
     }
 
-    private static final class HighlightCard {
-        private final VerticalLayout layout;
-        private final Span value;
+    private static final class HighlightCard extends VerticalLayout{
+        private final Span valueSpan;
         private final Span badge;
         private final Function<Number, String> format;
         private Number lastNumeric;
 
-        private HighlightCard(VerticalLayout layout, Span value, Span badge, Function<Number, String> format) {
-            this.layout = layout;
-            this.value = value;
-            this.badge = badge;
+        private HighlightCard(String title, NumberSignal signal, Function<Number, String> format) {
             this.format = format;
+
+            H2 h2 = new H2(title);
+            h2.addClassNames(FontWeight.NORMAL, Margin.NONE, TextColor.SECONDARY, FontSize.XSMALL);
+
+            valueSpan = new Span(format.apply(signal.value()));
+            valueSpan.addClassNames(FontWeight.SEMIBOLD, FontSize.XXXLARGE);
+            ComponentEffect.effect(valueSpan, () -> update(signal.value()));
+
+            badge = new Span();
+
+            add(h2, valueSpan, badge);
+            addClassName(Padding.LARGE);
+            setPadding(false);
+            setSpacing(false);
         }
 
         private void update(Number newValue) {
-            value.setText(format.apply(newValue));
+            valueSpan.setText(format.apply(newValue));
             badge.removeAll();
 
             VaadinIcon icon = VaadinIcon.ARROW_UP;

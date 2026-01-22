@@ -55,7 +55,7 @@ public class ExecuteCommandView extends VerticalLayout {
 
 
         var lastExecuted = new HorizontalLayout(lastExecutedTitle, lastExecutedValue);
-        lastExecutedValue.getElement().bindText(lastExecutedCommandSignal);
+        lastExecutedValue.bindText(lastExecutedCommandSignal);
 
         var accordion = new Accordion();
         var inSessionUL = new UnorderedList();
