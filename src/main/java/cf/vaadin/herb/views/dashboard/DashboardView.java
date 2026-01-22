@@ -8,6 +8,8 @@ import java.util.Random;
 import java.util.function.Function;
 
 import cf.vaadin.herb.views.dashboard.ServiceHealth.Status;
+
+import com.vaadin.copilot.shaded.guava.base.Objects;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.ComponentEffect;
 import com.vaadin.flow.component.UI;
@@ -38,6 +40,7 @@ import com.vaadin.flow.theme.lumo.LumoUtility.TextColor;
 import com.vaadin.signals.ListSignal;
 import com.vaadin.signals.NumberSignal;
 import com.vaadin.signals.Signal;
+import com.vaadin.signals.ValueSignal;
 
 import org.vaadin.lineawesome.LineAwesomeIconUrl;
 
@@ -69,9 +72,10 @@ public class DashboardView extends Main {
     private final ListSignal<Number> londonTimelineSignal = new ListSignal<>(Number.class);
     private final ListSignal<Number> newYorkTimelineSignal = new ListSignal<>(Number.class);
     private final ListSignal<Number> tokyoTimelineSignal = new ListSignal<>(Number.class);
+    private final ListSignal<ServiceHealth> serviceHealthSignal = new ListSignal<>(ServiceHealth.class);
     private Chart responseTimesChart;
     private DataSeries responseSeries;
-    private Grid<ServiceHealth> serviceHealthGrid;
+    private Grid<ValueSignal<ServiceHealth>> serviceHealthGrid;
 
     public DashboardView() {
         addClassName("dashboard-view");
@@ -168,24 +172,42 @@ public class DashboardView extends Main {
         HorizontalLayout header = createHeader("Service health", "Input / output");
 
         // Grid
-        Grid<ServiceHealth> grid = new Grid();
+        Grid<ValueSignal<ServiceHealth>> grid = new Grid();
         grid.addThemeVariants(GridVariant.LUMO_NO_BORDER);
         grid.setAllRowsVisible(true);
 
-        grid.addColumn(new ComponentRenderer<>(serviceHealth -> {
+        grid.addColumn(new ComponentRenderer<>(signal -> {
             Span status = new Span();
-            String statusText = getStatusDisplayName(serviceHealth);
-            status.getElement().setAttribute("aria-label", "Status: " + statusText);
-            status.getElement().setAttribute("title", "Status: " + statusText);
-            status.getElement().getThemeList().add(getStatusTheme(serviceHealth));
+
+            ComponentEffect.effect(status, () -> {
+                ServiceHealth serviceHealth = signal.value();
+                String statusTextInner = getStatusDisplayName(serviceHealth);
+                status.getElement().setAttribute("aria-label", "Status: " + statusTextInner);
+                status.getElement().setAttribute("title", "Status: " + statusTextInner);
+                status.getElement().getThemeList().clear();
+                status.getElement().getThemeList().add(getStatusTheme(serviceHealth));
+            });
             return status;
         })).setHeader("").setFlexGrow(0).setAutoWidth(true);
-        grid.addColumn(ServiceHealth::getCity).setHeader("City").setFlexGrow(1);
-        grid.addColumn(ServiceHealth::getInput).setHeader("Input").setAutoWidth(true).setTextAlign(ColumnTextAlign.END);
-        grid.addColumn(ServiceHealth::getOutput).setHeader("Output").setAutoWidth(true)
+        grid.addColumn(signal -> signal.value().getCity()).setHeader("City").setFlexGrow(1);
+        grid.addColumn(new ComponentRenderer<>(signal -> {
+            var input = new Span(String.valueOf(signal.value().getInput()));
+    
+            ComponentEffect.effect(input, () -> {
+                input.setText(String.valueOf(signal.value().getInput()));
+            });
+            return input;
+        })).setHeader("Input").setAutoWidth(true).setTextAlign(ColumnTextAlign.END);
+        grid.addColumn(new ComponentRenderer<>(signal -> {
+            var output = new Span(String.valueOf(signal.value().getInput()));
+    
+            ComponentEffect.effect(output, () -> {
+                output.setText(String.valueOf(signal.value().getInput()));
+            });
+            return output;
+        })).setHeader("Output").setAutoWidth(true)
                 .setTextAlign(ColumnTextAlign.END);
 
-        grid.setItems(mockServiceHealth());
         serviceHealthGrid = grid;
 
         // Add it all together
@@ -194,6 +216,14 @@ public class DashboardView extends Main {
         serviceHealth.setPadding(false);
         serviceHealth.setSpacing(false);
         serviceHealth.getElement().getThemeList().add("spacing-l");
+
+        ComponentEffect.effect(grid, () -> {
+            grid.setItems(serviceHealthSignal.value());
+            // TODO not this, update each signal individually
+        });
+
+        mockServiceHealth().forEach(health -> serviceHealthSignal.insertLast(health));
+
         return serviceHealth;
     }
 
@@ -313,9 +343,17 @@ public class DashboardView extends Main {
             responseTimesChart.drawChart();
         }
 
-        if (serviceHealthGrid != null) {
-            serviceHealthGrid.setItems(mockServiceHealth());
-        }
+        // TODO report issue ListSignal set items / set value
+        //serviceHealthSignal.clear();
+        var healthValues = serviceHealthSignal.value();
+        mockServiceHealth().forEach(newHealth -> {
+            healthValues.forEach(currentHealthSignal -> {
+                var currentHealt = currentHealthSignal.value();
+                if (Objects.equal(currentHealt.getCity(), newHealth.getCity())) {
+                    currentHealthSignal.value(newHealth);
+                }
+            });
+        });
     }
 
     private List<ServiceHealth> mockServiceHealth() {
