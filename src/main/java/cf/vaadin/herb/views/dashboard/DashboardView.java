@@ -160,8 +160,6 @@ public class DashboardView extends Main {
 
         // Add it all together
         VerticalLayout viewEvents = new VerticalLayout(header, chart);
-        viewEvents.addClassName(Padding.LARGE);
-        viewEvents.setPadding(false);
         viewEvents.setSpacing(false);
         viewEvents.getElement().getThemeList().add("spacing-l");
         return viewEvents;
@@ -199,10 +197,10 @@ public class DashboardView extends Main {
             return input;
         })).setHeader("Input").setAutoWidth(true).setTextAlign(ColumnTextAlign.END);
         grid.addColumn(new ComponentRenderer<>(signal -> {
-            var output = new Span(String.valueOf(signal.value().getInput()));
+            var output = new Span(String.valueOf(signal.value().getOutput()));
     
             ComponentEffect.effect(output, () -> {
-                output.setText(String.valueOf(signal.value().getInput()));
+                output.setText(String.valueOf(signal.value().getOutput()));
             });
             return output;
         })).setHeader("Output").setAutoWidth(true)
@@ -418,8 +416,6 @@ public class DashboardView extends Main {
             badge = new Span();
 
             add(h2, valueSpan, badge);
-            addClassName(Padding.LARGE);
-            setPadding(false);
             setSpacing(false);
         }
 
