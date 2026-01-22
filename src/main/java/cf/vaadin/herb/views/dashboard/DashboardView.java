@@ -66,7 +66,6 @@ public class DashboardView extends Main {
     private ListSeries londonSeries;
     private ListSeries newYorkSeries;
     private ListSeries tokyoSeries;
-    private ListSeries timelineCategoriesSeries;
     private final ListSignal<String> timelineCategoriesSignal = new ListSignal<>(String.class);
     private final ListSignal<Number> berlinTimelineSignal = new ListSignal<>(Number.class);
     private final ListSignal<Number> londonTimelineSignal = new ListSignal<>(Number.class);
@@ -75,6 +74,7 @@ public class DashboardView extends Main {
     private final ListSignal<ServiceHealth> serviceHealthSignal = new ListSignal<>(ServiceHealth.class);
     private Chart responseTimesChart;
     private DataSeries responseSeries;
+    private final ListSignal<Number> responseSignal = new ListSignal<>(Number.class);
     private Grid<ValueSignal<ServiceHealth>> serviceHealthGrid;
 
     public DashboardView() {
@@ -212,10 +212,6 @@ public class DashboardView extends Main {
 
         // Add it all together
         VerticalLayout serviceHealth = new VerticalLayout(header, grid);
-        serviceHealth.addClassName(Padding.LARGE);
-        serviceHealth.setPadding(false);
-        serviceHealth.setSpacing(false);
-        serviceHealth.getElement().getThemeList().add("spacing-l");
 
         ComponentEffect.effect(grid, () -> {
             grid.setItems(serviceHealthSignal.value());
@@ -246,12 +242,26 @@ public class DashboardView extends Main {
         responseSeries.add(new DataSeriesItem("System 6", 12.5));
         conf.addSeries(responseSeries);
 
+        ComponentEffect.effect(chart, () -> {
+            var responseValues = responseSignal.value();
+            responseSeries.get(0).setY(responseValues.get(0).value());
+            responseSeries.get(1).setY(responseValues.get(1).value());
+            responseSeries.get(2).setY(responseValues.get(2).value());
+            responseSeries.get(3).setY(responseValues.get(3).value());
+            responseSeries.get(4).setY(responseValues.get(4).value());
+            responseSeries.get(5).setY(responseValues.get(5).value());
+        });
+
+        responseSignal.insertLast(12.5);
+        responseSignal.insertLast(12.5);
+        responseSignal.insertLast(12.5);
+        responseSignal.insertLast(12.5);
+        responseSignal.insertLast(12.5);
+        responseSignal.insertLast(12.5);
+
         // Add it all together
         VerticalLayout serviceHealth = new VerticalLayout(header, chart);
-        serviceHealth.addClassName(Padding.LARGE);
-        serviceHealth.setPadding(false);
         serviceHealth.setSpacing(false);
-        serviceHealth.getElement().getThemeList().add("spacing-l");
         return serviceHealth;
     }
 
@@ -334,11 +344,11 @@ public class DashboardView extends Main {
             viewEventsChart.drawChart();
         }
 
-        if (responseSeries != null) {
-            for (DataSeriesItem item : responseSeries.getData()) {
-                item.setY(randomBetween(6, 22));
-            }
+        for (ValueSignal<Number> signal : responseSignal.value()) {
+            signal.value(randomBetween(6, 22));
         }
+
+        
         if (responseTimesChart != null) {
             responseTimesChart.drawChart();
         }
