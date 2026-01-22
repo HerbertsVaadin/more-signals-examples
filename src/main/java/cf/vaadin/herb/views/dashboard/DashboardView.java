@@ -416,7 +416,7 @@ public class DashboardView extends Main {
             badge = new Span();
 
             add(h2, valueSpan, badge);
-            setSpacing(false);
+            getStyle().setGap("5px");
         }
 
         private void update(Number newValue) {
@@ -439,7 +439,8 @@ public class DashboardView extends Main {
             }
 
             Icon i = icon.create();
-            i.addClassNames(BoxSizing.BORDER, Padding.XSMALL);
+            i.setSize("10px");
+            i.getStyle().setMarginRight("4px").setMarginLeft("0");
             badge.add(i, new Span(prefix + percentage));
             badge.getElement().getThemeList().clear();
             badge.getElement().getThemeList().add(theme);
